@@ -223,7 +223,7 @@ def test():
 
 
 @dataclass
-class EmbedderMeta:
+class EmbedderMeta: # TODO: save original test and train embeddings somewhere
     model_path: str
     umap_transformer_path: str
     pdb_folder: str
@@ -233,7 +233,6 @@ class EmbedderMeta:
     train_acc: float
     test_acc: float
     original_invariants_file: str
-
 
 @dataclass
 class GeometricusGraphEmbedder:
@@ -310,7 +309,7 @@ class GeometricusGraphEmbedder:
                                                    epochs=epochs)
 
         # 6. create umap embedding based on model output
-        pytorch_embedding = cls.get_embedding([train_data, test_data], model)
+        pytorch_embedding, _, _, pdb_ids = cls.get_embedding([train_data, test_data], model)
         umap_transformer: umap.UMAP = umap.UMAP(n_components=embedding_size)
         umap_transformer.fit(pytorch_embedding)
 
@@ -333,7 +332,7 @@ class GeometricusGraphEmbedder:
         pickle.dump(meta, open(str(full_output_path / "meta.pkl"), "wb"))
         pickle.dump(invariant_all, open(str(full_output_path / "invariants.pkl"), "wb"))
 
-        return cls(list(invariant_all.keys()),
+        return cls(list(pdb_ids),
                    meta, model, pdb_target_folder=None,
                    pdb_training_folder=pdb_file_path,
                    umap_transformer=umap_transformer)
