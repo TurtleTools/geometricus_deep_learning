@@ -1,6 +1,6 @@
 from torch.nn import Linear
 import torch.nn.functional as F
-from torch_geometric.nn import GraphConv, SuperGATConv
+from torch_geometric.nn import GraphConv
 from torch_geometric.nn import global_mean_pool
 import torch
 
@@ -20,7 +20,6 @@ class GCN(torch.nn.Module):
         x = self.conv2(x, edge_index)
         x = x.relu()
         x = self.conv3(x, edge_index)
-
 
         # 2. Readout layer
         x = global_mean_pool(x, batch)  # [batch_size, hidden_channels]
