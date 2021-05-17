@@ -286,7 +286,10 @@ class GeometricusGraphEmbedder:
                       learning_rate: float = 0.001,
                       file_output_path: str = "./data/models/",
                       embedding_size: int = 10,
-                      epochs: int = 1_000) -> "GeometricusGraphEmbedder":
+                      epochs: int = 1_000,
+                      number_of_batches: int = 512,
+                      train_ratio: float = 0.8,
+                      graph_distance_threshold: float = 6.) -> "GeometricusGraphEmbedder":
 
         # 1. create invariants according to given invariant types
         # 2. concat. different types together into single array of moments
@@ -296,7 +299,10 @@ class GeometricusGraphEmbedder:
         pdb_file_to_class_mapping = {k: v for k, v in pdb_file_to_class_mapping.items() if k in invariant_all}
 
         # 4. Split into train and test sets
-        train_data, test_data = transform_geometricus_dataset_for_training(pdb_file_to_class_mapping, invariant_all)
+        train_data, test_data = transform_geometricus_dataset_for_training(pdb_file_to_class_mapping, invariant_all,
+                                                                           batch_no=number_of_batches,
+                                                                           graph_distance_threshold=graph_distance_threshold,
+                                                                           train_ratio=train_ratio)
 
         # 5. train model and store relevant metadata
         model, (train_acc, test_acc) = train_model(train_data, test_data,
@@ -345,7 +351,7 @@ class GeometricusGraphEmbedder:
         model.eval()
 
         # 2. Load umap
-        umap_transformer = pickle.load(open(meta.umap_transformer_path))
+        umap_transformer = pickle.load(open(meta.umap_transformer_path, "rb"))
 
         # 3. Original ids as further meta data to load..
         ids = [x for x in glob(str(Path(meta.pdb_folder) / "*"))]
@@ -353,11 +359,15 @@ class GeometricusGraphEmbedder:
         return cls(ids=ids, model_meta=meta, model=model,
                    pdb_training_folder=meta.pdb_folder, umap_transformer=umap_transformer)
 
-    def pdbs_to_embedding(self, pdb_folder: str) -> ty.Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def pdbs_to_raw_embedding(self, pdb_folder: str) -> ty.Tuple[np.ndarray, np.ndarray, np.ndarray]:
         invariants = self.get_multi_invariants(pdb_folder, self.model_meta.invariant_types)
         data_part1, data_part2 = transform_geometricus_dataset_for_training({x: x for x in invariants},
                                                                             invariants)
         res, _, predicted_labels, pdb_ids = self.get_embedding([data_part1, data_part2], self.model)
+        return res, pdb_ids, predicted_labels
+
+    def pdbs_to_umap_embedding(self, pdb_folder: str) -> ty.Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        res, pdb_ids, predicted_labels = self.pdbs_to_raw_embedding(pdb_folder)
         return self.umap_transformer.transform(res), pdb_ids, predicted_labels
 
     @property
