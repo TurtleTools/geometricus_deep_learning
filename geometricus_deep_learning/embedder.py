@@ -67,7 +67,7 @@ def invariants_from_pdb_folder(pdb_file_path: str,
                                                                                         moment_types=moment_types,
                                                                                         split_size=invariant_type.k,
                                                                                         split_type=invariant_type.type)
-        except: # TODO handle bad pdbs
+        except:  # TODO handle bad pdbs
             continue
 
     scaler = StandardScaler()
@@ -115,8 +115,9 @@ def transform_geometricus_dataset_for_training(filename_to_classname: ty.Dict[st
                                                    str, ty.Union[MomentInvariants, MomentInvariantsSavable]],
                                                train_ratio: float = 0.8,
                                                graph_distance_threshold: float = 6.,
-                                               batch_no: int = 1028) -> ty.Tuple[DataLoader, DataLoader]:
+                                               batch_no: int = 1028) -> ty.Tuple[DataLoader, DataLoader, dict]:
     train_ratio = train_ratio if train_ratio <= 1 else 1.
+    filename_to_classname = {k: v for k, v in filename_to_classname.items() if k in invariants}
     all_keys = list(filename_to_classname.keys())
     shuffle(all_keys)
 
@@ -129,6 +130,8 @@ def transform_geometricus_dataset_for_training(filename_to_classname: ty.Dict[st
     encoder = OneHotEncoder(handle_unknown="ignore")
     encoder.fit([[x] for x in set(ys)])
 
+    id_to_classname = {k: encoder.transform([[k]]).argmax() for k in ys}
+
     for i, data in enumerate(xs):
         data.y = torch.from_numpy(np.array([encoder.transform([[ys[i]]]).toarray().astype("int32")[0].argmax()])).type(
             torch.LongTensor)
@@ -138,7 +141,7 @@ def transform_geometricus_dataset_for_training(filename_to_classname: ty.Dict[st
     test_dataset = xs[int(len(xs) * train_ratio):]
 
     return (DataLoader(train_dataset, batch_size=batch_no, shuffle=True),
-            DataLoader(test_dataset, batch_size=batch_no, shuffle=False))
+            DataLoader(test_dataset, batch_size=batch_no, shuffle=False), id_to_classname)
 
 
 def train_model(train_dataset,
@@ -210,8 +213,8 @@ def test():
     cath_mapping = {k: v for k, v in cath_mapping.items() if v in keys_to_use}
     print("cath info linked to files")
 
-    train_data, test_data = transform_geometricus_dataset_for_training(cath_mapping,
-                                                                       invariants)
+    train_data, test_data, class_map = transform_geometricus_dataset_for_training(cath_mapping,
+                                                                                  invariants)
     train_model(
         train_data,
         test_data,
@@ -223,16 +226,17 @@ def test():
 
 
 @dataclass
-class EmbedderMeta: # TODO: save original test and train embeddings somewhere
+class EmbedderMeta:  # TODO: save original test and train embeddings somewhere
     model_path: str
     umap_transformer_path: str
     pdb_folder: str
     self_path: str
-    classes_to_ids: ty.Dict[str, int]
+    id_to_classname: ty.Dict[str, int]
     invariant_types: ty.List[InvariantType]
     train_acc: float
     test_acc: float
     original_invariants_file: str
+
 
 @dataclass
 class GeometricusGraphEmbedder:
@@ -278,18 +282,18 @@ class GeometricusGraphEmbedder:
         return np.concatenate(res), np.concatenate(labels), np.concatenate(predicted_labels), np.concatenate(pdb_ids)
 
     @classmethod
-    def from_training(cls,
-                      pdb_file_path: str,
-                      invariant_types: ty.List[InvariantType],
-                      pdb_file_to_class_mapping: ty.Dict[str, str],
-                      hidden_channels: int = 128,
-                      learning_rate: float = 0.001,
-                      file_output_path: str = "./data/models/",
-                      embedding_size: int = 10,
-                      epochs: int = 1_000,
-                      number_of_batches: int = 512,
-                      train_ratio: float = 0.8,
-                      graph_distance_threshold: float = 6.) -> "GeometricusGraphEmbedder":
+    def fit(cls,
+            pdb_file_path: str,
+            invariant_types: ty.List[InvariantType],
+            pdb_file_to_class_mapping: ty.Dict[str, str],
+            hidden_channels: int = 128,
+            learning_rate: float = 0.001,
+            file_output_path: str = "./data/models/",
+            embedding_size: int = 10,
+            epochs: int = 1_000,
+            number_of_batches: int = 512,
+            train_ratio: float = 0.8,
+            graph_distance_threshold: float = 6.) -> "GeometricusGraphEmbedder":
 
         # 1. create invariants according to given invariant types
         # 2. concat. different types together into single array of moments
@@ -299,10 +303,11 @@ class GeometricusGraphEmbedder:
         pdb_file_to_class_mapping = {k: v for k, v in pdb_file_to_class_mapping.items() if k in invariant_all}
 
         # 4. Split into train and test sets
-        train_data, test_data = transform_geometricus_dataset_for_training(pdb_file_to_class_mapping, invariant_all,
-                                                                           batch_no=number_of_batches,
-                                                                           graph_distance_threshold=graph_distance_threshold,
-                                                                           train_ratio=train_ratio)
+        train_data, test_data, class_map = transform_geometricus_dataset_for_training(pdb_file_to_class_mapping,
+                                                                                      invariant_all,
+                                                                                      batch_no=number_of_batches,
+                                                                                      graph_distance_threshold=graph_distance_threshold,
+                                                                                      train_ratio=train_ratio)
 
         # 5. train model and store relevant metadata
         model, (train_acc, test_acc) = train_model(train_data, test_data,
@@ -329,7 +334,7 @@ class GeometricusGraphEmbedder:
             umap_transformer_path=str(full_output_path / "umap.pkl"),
             pdb_folder=str(Path(pdb_file_path).resolve()),
             self_path=str(full_output_path / "meta.pkl"),
-            classes_to_ids=None,  # TODO: add this later..
+            classes_to_ids=class_map,
             invariant_types=invariant_types,
             train_acc=train_acc,
             test_acc=test_acc,
@@ -359,20 +364,34 @@ class GeometricusGraphEmbedder:
         return cls(ids=ids, model_meta=meta, model=model,
                    pdb_training_folder=meta.pdb_folder, umap_transformer=umap_transformer)
 
-    def pdbs_to_raw_embedding(self, pdb_folder: str) -> ty.Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def transform(self, pdb_folder: str,
+                  mappings: ty.Union[ty.Dict[str, str], None] = None) -> ty.Tuple[
+        np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         invariants = self.get_multi_invariants(pdb_folder, self.model_meta.invariant_types)
-        data_part1, data_part2 = transform_geometricus_dataset_for_training({x: x for x in invariants},
-                                                                            invariants)
-        res, _, predicted_labels, pdb_ids = self.get_embedding([data_part1, data_part2], self.model)
-        return res, pdb_ids, predicted_labels
+        if mappings is None:
+            data_part1, data_part2, _ = transform_geometricus_dataset_for_training({x: x for x in invariants},
+                                                                                           invariants)
+        else:
+            data_part1, data_part2, _ = transform_geometricus_dataset_for_training(mappings,
+                                                                                           invariants)
+        res, labels, predicted_labels, pdb_ids = self.get_embedding([data_part1, data_part2], self.model)
+        return res, pdb_ids, labels, predicted_labels
 
-    def pdbs_to_umap_embedding(self, pdb_folder: str) -> ty.Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        res, pdb_ids, predicted_labels = self.pdbs_to_raw_embedding(pdb_folder)
-        return self.umap_transformer.transform(res), pdb_ids, predicted_labels
+    def transform_with_umap(self, pdb_folder: str,
+                            mappings: ty.Union[ty.Dict[str, str], None] = None) -> ty.Tuple[
+        np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        res, pdb_ids, labels, predicted_labels = self.transform(pdb_folder, mappings=mappings)
+        return self.umap_transformer.transform(res), pdb_ids, labels, predicted_labels
 
     @property
     def get_original_moment_invariants(self):
         return pickle.load(open(self.model_meta.original_invariants_file, "rb"))
+
+    def retrain(self):
+        pass
+
+    def continue_training(self):
+        pass
 
 
 if __name__ == "__main__":
