@@ -334,7 +334,7 @@ class GeometricusGraphEmbedder:
             umap_transformer_path=str(full_output_path / "umap.pkl"),
             pdb_folder=str(Path(pdb_file_path).resolve()),
             self_path=str(full_output_path / "meta.pkl"),
-            classes_to_ids=class_map,
+            id_to_classname=class_map,
             invariant_types=invariant_types,
             train_acc=train_acc,
             test_acc=test_acc,
