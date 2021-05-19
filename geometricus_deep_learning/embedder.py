@@ -184,6 +184,7 @@ def train_model(train_dataset,
 
     tests = list()
     trains = list()
+    epoch = 0
     for epoch in range(1, epochs):
         train()
         train_acc = test(train_dataset)
