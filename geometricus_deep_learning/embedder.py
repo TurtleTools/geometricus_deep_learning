@@ -34,7 +34,8 @@ class MomentInvariantsSavable:
 
 
 def invariants_from_pdb_folder(pdb_file_path: str,
-                               invariant_type: InvariantType) -> ty.Dict[
+                               invariant_type: InvariantType,
+                               ids_to_use: ty.Union[ty.Set[str], None] = None) -> ty.Dict[
     str, MomentInvariants]:
     files = glob(pdb_file_path + "*" if pdb_file_path.endswith("/") else pdb_file_path + "/*")
     folder_invariants: ty.Dict[str, MomentInvariants] = dict()
@@ -60,7 +61,8 @@ def invariants_from_pdb_folder(pdb_file_path: str,
             MomentType.phi_9,
         ]
     )
-
+    if ids_to_use is not None:
+        files = [x for x in files if x.split("/")[-1] in ids_to_use]
     for filename in files:
         try:
             folder_invariants[filename.split("/")[-1]] = MomentInvariants.from_pdb_file(filename,
@@ -255,12 +257,13 @@ class GeometricusGraphEmbedder:
 
     @staticmethod
     def get_multi_invariants(pdb_file_path: str,
-                             invariant_types: ty.List[InvariantType]) -> ty.Dict[str, MomentInvariantsSavable]:
+                             invariant_types: ty.List[InvariantType],
+                             ids_to_use: ty.Union[ty.Set[str], None] = None) -> ty.Dict[str, MomentInvariantsSavable]:
         invariant_collection: ty.List[ty.Dict[str, MomentInvariantsSavable]] = list()
         for invariant_type in invariant_types:
             invariant_collection.append(
                 {k: MomentInvariantsSavable.from_invariant(v) for k, v in
-                 invariants_from_pdb_folder(pdb_file_path, invariant_type).items()}
+                 invariants_from_pdb_folder(pdb_file_path, invariant_type, ids_to_use=ids_to_use).items()}
             )
         # 2. concat. different types together into single array of moments
         invariant_all: ty.Dict[str, MomentInvariantsSavable] = {k: MomentInvariantsSavable(None, None) for k in
@@ -303,7 +306,8 @@ class GeometricusGraphEmbedder:
 
         # 1. create invariants according to given invariant types
         # 2. concat. different types together into single array of moments
-        invariant_all = cls.get_multi_invariants(pdb_file_path, invariant_types)
+        invariant_all = cls.get_multi_invariants(pdb_file_path, invariant_types,
+                                                 ids_to_use=set(list(pdb_file_to_class_mapping.keys())))
         single_invariant = invariant_all[list(invariant_all.keys())[0]]
         # 3. Remove mappings which are not included
         pdb_file_to_class_mapping = {k: v for k, v in pdb_file_to_class_mapping.items() if k in invariant_all}
@@ -332,13 +336,13 @@ class GeometricusGraphEmbedder:
 
         # 7. store metadata
 
-        full_output_path = Path(file_output_path).resolve()
+        full_output_path = Path(file_output_path)
         torch.save(model, full_output_path / "model.pth")
         pickle.dump(umap_transformer, open(str(full_output_path / "umap.pkl"), "wb"))
         meta: EmbedderMeta = EmbedderMeta(
             model_path=str(full_output_path / "model.pth"),
             umap_transformer_path=str(full_output_path / "umap.pkl"),
-            pdb_folder=str(Path(pdb_file_path).resolve()),
+            pdb_folder=str(Path(pdb_file_path)),
             self_path=str(full_output_path / "meta.pkl"),
             id_to_classname_path=str(full_output_path / "class_map.pkl"),
             invariant_types=invariant_types,
