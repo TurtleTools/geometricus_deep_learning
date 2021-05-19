@@ -130,7 +130,7 @@ def transform_geometricus_dataset_for_training(filename_to_classname: ty.Dict[st
     encoder = OneHotEncoder(handle_unknown="ignore")
     encoder.fit([[x] for x in set(ys)])
 
-    id_to_classname = {k: encoder.transform([[k]]).argmax() for k in ys}
+    id_to_classname = {encoder.transform([[k]]).argmax(): k for k in ys}
 
     for i, data in enumerate(xs):
         data.y = torch.from_numpy(np.array([encoder.transform([[ys[i]]]).toarray().astype("int32")[0].argmax()])).type(
@@ -231,11 +231,14 @@ class EmbedderMeta:  # TODO: save original test and train embeddings somewhere
     umap_transformer_path: str
     pdb_folder: str
     self_path: str
-    id_to_classname: ty.Dict[str, int]
+    id_to_classname_path: str
     invariant_types: ty.List[InvariantType]
     train_acc: float
     test_acc: float
     original_invariants_file: str
+    test_dataset_path: str
+    train_dataset_path: str
+
 
 
 @dataclass
@@ -246,6 +249,9 @@ class GeometricusGraphEmbedder:
     pdb_target_folder: ty.Union[str, None] = None
     pdb_training_folder: ty.Union[str, None] = None
     umap_transformer: ty.Union[str, umap.UMAP, None] = None
+    id_to_classname: ty.Union[ty.Dict[str, int]] = None
+    train_set: ty.Union[DataLoader, None] = None
+    test_set: ty.Union[DataLoader, None] = None
 
     @staticmethod
     def get_multi_invariants(pdb_file_path: str,
@@ -334,19 +340,27 @@ class GeometricusGraphEmbedder:
             umap_transformer_path=str(full_output_path / "umap.pkl"),
             pdb_folder=str(Path(pdb_file_path).resolve()),
             self_path=str(full_output_path / "meta.pkl"),
-            id_to_classname=class_map,
+            id_to_classname_path=str(full_output_path / "class_map.pkl"),
             invariant_types=invariant_types,
             train_acc=train_acc,
             test_acc=test_acc,
-            original_invariants_file=str(full_output_path / "invariants.pkl")
+            original_invariants_file=str(full_output_path / "invariants.pkl"),
+            train_dataset_path=str(full_output_path / "train_set.pkl"),
+            test_dataset_path=str(full_output_path / "test_set.pkl"),
         )
+        pickle.dump(class_map, open(str(full_output_path / "class_map.pkl"), "wb"))
         pickle.dump(meta, open(str(full_output_path / "meta.pkl"), "wb"))
         pickle.dump(invariant_all, open(str(full_output_path / "invariants.pkl"), "wb"))
+        pickle.dump(train_data, open(str(full_output_path / "train_set.pkl"), "wb"))
+        pickle.dump(test_data, open(str(full_output_path / "test_set.pkl"), "wb"))
 
         return cls(list(pdb_ids),
                    meta, model, pdb_target_folder=None,
                    pdb_training_folder=pdb_file_path,
-                   umap_transformer=umap_transformer)
+                   umap_transformer=umap_transformer,
+                   id_to_classname=class_map,
+                   train_set=train_data,
+                   test_set=test_data)
 
     @classmethod
     def from_model_meta_file(cls, filename: str) -> "GeometricusGraphEmbedder":
@@ -361,8 +375,17 @@ class GeometricusGraphEmbedder:
         # 3. Original ids as further meta data to load..
         ids = [x for x in glob(str(Path(meta.pdb_folder) / "*"))]
 
+        # 4. Load class map to retrieve real class names from ids
+        class_map = pickle.load(open(meta.id_to_classname_path, "rb"))
+
+        # 5. Load original train/test datasets
+
+        train_data = pickle.load(open(meta.train_dataset_path, "rb"))
+        test_data = pickle.load(open(meta.test_dataset_path, "rb"))
+
         return cls(ids=ids, model_meta=meta, model=model,
-                   pdb_training_folder=meta.pdb_folder, umap_transformer=umap_transformer)
+                   pdb_training_folder=meta.pdb_folder, umap_transformer=umap_transformer,
+                   id_to_classname=class_map, train_set=train_data, test_set=test_data)
 
     def transform(self, pdb_folder: str,
                   mappings: ty.Union[ty.Dict[str, str], None] = None) -> ty.Tuple[
