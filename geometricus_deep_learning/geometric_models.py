@@ -60,3 +60,20 @@ class Simem(torch.nn.Module):
         x1 = self.forward_single(x1, edge_index1, batch)
         x2 = self.forward_single(x2, edge_index2, batch)
         return x1, x2
+
+
+class Simple1DCNN(torch.nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(Simple1DCNN, self).__init__()
+        self.layer1 = torch.nn.Conv1d(in_channels=in_channels, out_channels=out_channels,
+                                      kernel_size=3, stride=1, padding=1)
+        self.act1 = torch.nn.ReLU()
+        self.layer2 = torch.nn.Conv1d(in_channels=out_channels, out_channels=out_channels,
+                                      kernel_size=3, stride=1, padding=1)
+
+    def forward(self, x):
+        x = self.layer1(x)
+        x = self.act1(x)
+        x = self.layer2(x)
+
+        return torch.nn.functional.log_softmax(x, dim=1)
