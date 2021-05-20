@@ -11,6 +11,9 @@ from random import shuffle
 from sklearn.preprocessing import StandardScaler
 from biotransformers import BioTransformers
 import prody as pd
+from umap import UMAP
+
+
 
 
 @dataclass
@@ -20,13 +23,15 @@ class SeqData:
     pdb_id: str
 
 
-def transform_pdbseqs(pdb_folder) -> ty.Dict[str, SeqData]:
-    bio_trans = BioTransformers(backend="protbert")
-    files = list(glob(pdb_folder + "/*"))
+def transform_pdbseqs(pdb_folder, selection: ty.Union[ty.Set[str]]) -> ty.Dict[str, SeqData]:
+    if selection is None:
+        selection = {x.split("/")[-1] for x in glob(pdb_folder + "/*")}
+    bio_trans = BioTransformers(backend="protbert", device="cuda")
+    files = [x for x in glob(pdb_folder + "/*") if x.split("/")[-1] in selection]
     pdbs = [pd.parsePDB(x) for x in files]
     sequences = [x.select('protein and name CA').getSequence() for x in pdbs]
     ids = [x.split("/")[-1] for x in files]
-    sequence_embeddings = bio_trans.compute_embeddings(sequences, pool_mode=('cls', 'mean'))
+    sequence_embeddings = UMAP(n_components=150).fit_transform(bio_trans.compute_embeddings(sequences, pool_mode=('cls', 'mean'))["cls"])
     return {ids[i]: SeqData(sequences[i],
                             sequence_embeddings[i],
                             ids[i]) for i in range(len(ids))}
@@ -128,17 +133,7 @@ def invariant_to_graph(invariant: ty.Union[MomentInvariants, MomentInvariantsSav
     return graph
 
 
-def dataloader_from_structure_and_sequence(structure_dataloaders: ty.Dict[str, np.ndarray],
-                                           sequence_data: ty.Dict[str, SeqData],
-                                           train_ratio: float = 0.8,
-                                           batch_no: int = 512) -> ty.Tuple[np.ndarray, DataLoader]:
 
-    pairs: ty.List[ty.Tuple[np.ndarray, SeqData]] = [(structure_dataloaders[k],
-                                                      sequence_data[k]) for k in structure_dataloaders.keys()]
-    train_dataset = pairs[:int(train_ratio * len(pairs))]
-    test_dataset = pairs[int(train_ratio * len(pairs)):]
-    return (DataLoader(train_dataset, batch_size=batch_no, shuffle=True),
-            DataLoader(test_dataset, batch_size=batch_no, shuffle=False))
 
 
 def transform_geometricus_dataset_for_training(filename_to_classname: ty.Dict[str, str],

@@ -7,11 +7,9 @@ from glob import glob
 import torch
 from geometricus_deep_learning.geometric_models import GCN
 from geometricus_deep_learning import dataset_utils, utils
-import umap
 from pathlib import Path
 import pickle
-from biotransformers import BioTransformers
-import prody as pd
+from torch.utils import data
 
 
 def train_model(train_dataset,
@@ -99,7 +97,6 @@ def test():
 @dataclass
 class EmbedderMeta:  # TODO: save original test and train embeddings somewhere
     model_path: str
-    umap_transformer_path: str
     pdb_folder: str
     self_path: str
     id_to_classname_path: str
@@ -118,7 +115,6 @@ class GeometricusGraphEmbedder:
     model: ty.Union[GCN, None] = None
     pdb_target_folder: ty.Union[str, None] = None
     pdb_training_folder: ty.Union[str, None] = None
-    umap_transformer: ty.Union[str, umap.UMAP, None] = None
     id_to_classname: ty.Union[ty.Dict[str, int]] = None
     train_set: ty.Union[DataLoader, None] = None
     test_set: ty.Union[DataLoader, None] = None
@@ -169,7 +165,6 @@ class GeometricusGraphEmbedder:
             hidden_channels: int = 128,
             learning_rate: float = 0.001,
             file_output_path: str = "./data/models/",
-            embedding_size: int = 10,
             epochs: int = 1_000,
             number_of_batches: int = 512,
             train_ratio: float = 0.8,
@@ -201,19 +196,15 @@ class GeometricusGraphEmbedder:
                                                    lr=learning_rate,
                                                    epochs=epochs)
 
-        # 6. create umap embedding based on model output
+        # 6. get embedding
         pytorch_embedding, _, _, pdb_ids = cls.get_embedding([train_data, test_data], model)
-        umap_transformer: umap.UMAP = umap.UMAP(n_components=embedding_size)
-        umap_transformer.fit(pytorch_embedding)
 
         # 7. store metadata
 
         full_output_path = Path(file_output_path)
         torch.save(model, full_output_path / "model.pth")
-        pickle.dump(umap_transformer, open(str(full_output_path / "umap.pkl"), "wb"))
         meta: EmbedderMeta = EmbedderMeta(
             model_path=str(full_output_path / "model.pth"),
-            umap_transformer_path=str(full_output_path / "umap.pkl"),
             pdb_folder=str(Path(pdb_file_path)),
             self_path=str(full_output_path / "meta.pkl"),
             id_to_classname_path=str(full_output_path / "class_map.pkl"),
@@ -233,7 +224,6 @@ class GeometricusGraphEmbedder:
         return cls(list(pdb_ids),
                    meta, model, pdb_target_folder=None,
                    pdb_training_folder=pdb_file_path,
-                   umap_transformer=umap_transformer,
                    id_to_classname=class_map,
                    train_set=train_data,
                    test_set=test_data)
@@ -245,22 +235,19 @@ class GeometricusGraphEmbedder:
         model = torch.load(meta.model_path)
         model.eval()
 
-        # 2. Load umap
-        umap_transformer = pickle.load(open(meta.umap_transformer_path, "rb"))
-
-        # 3. Original ids as further meta data to load..
+        # 2. Original ids as further meta data to load..
         ids = [x for x in glob(str(Path(meta.pdb_folder) / "*"))]
 
-        # 4. Load class map to retrieve real class names from ids
+        # 3. Load class map to retrieve real class names from ids
         class_map = pickle.load(open(meta.id_to_classname_path, "rb"))
 
-        # 5. Load original train/test datasets
+        # 4. Load original train/test datasets
 
         train_data = pickle.load(open(meta.train_dataset_path, "rb"))
         test_data = pickle.load(open(meta.test_dataset_path, "rb"))
 
         return cls(ids=ids, model_meta=meta, model=model,
-                   pdb_training_folder=meta.pdb_folder, umap_transformer=umap_transformer,
+                   pdb_training_folder=meta.pdb_folder,
                    id_to_classname=class_map, train_set=train_data, test_set=test_data)
 
     def transform(self, pdb_folder: str,
@@ -276,12 +263,6 @@ class GeometricusGraphEmbedder:
                                                                                          invariants)
         res, labels, predicted_labels, pdb_ids = self.get_embedding([data_part1, data_part2], self.model)
         return res, pdb_ids, labels, predicted_labels
-
-    def transform_with_umap(self, pdb_folder: str,
-                            mappings: ty.Union[ty.Dict[str, str], None] = None) -> ty.Tuple[
-        np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        res, pdb_ids, labels, predicted_labels = self.transform(pdb_folder, mappings=mappings)
-        return self.umap_transformer.transform(res), pdb_ids, labels, predicted_labels
 
     @property
     def get_original_moment_invariants(self):
@@ -299,22 +280,43 @@ class GeometricusGraphEmbedder:
         train_loader, test_loader = self.get_structure_to_sequence_loaders(pdb_folder, train_ratio=train_ratio,
                                                                            batch_no=batch_no)
         return train_sequence_to_structure_model(train_loader, test_loader,
-                                                 input_length=1028,
-                                                 output_length=len(self.model_meta.id_to_classname_path))
+                                                 input_length=150,
+                                                 output_length=20)
 
     def get_structure_to_sequence_loaders(self, pdb_folder: str, train_ratio: float = 0.8,
-                                          batch_no: int = 512):
-        sequence_transforms: ty.Dict[str, utils.SeqData] = utils.transform_pdbseqs(pdb_folder)
+                                          batch_no: int = 1028):
+        from umap import UMAP
         structure_embedding, pdb_ids, _, _ = self.get_self_embedding()
+        structure_embedding = UMAP(n_components=20).fit_transform(structure_embedding)
         structure_embedding = {pdb_ids[i]: torch.from_numpy(structure_embedding[i]) for i in range(len(pdb_ids))}
-        return utils.dataloader_from_structure_and_sequence(structure_embedding,
-                                                            sequence_transforms,
-                                                            train_ratio=train_ratio,
-                                                            batch_no=batch_no)
+        sequence_transforms: ty.Dict[str, utils.SeqData] = utils.transform_pdbseqs(pdb_folder,
+                                                                                   selection=set(list(structure_embedding.keys())))
+        pairs = [
+            (structure_embedding[k], torch.from_numpy(sequence_transforms[k].x))
+            for k in structure_embedding
+        ]
+        train_dataset = DataLoader(StructureSeqDataset(pairs[:int(len(pairs) * train_ratio)]),
+                                   batch_size=batch_no, shuffle=True)
+        test_dataset = DataLoader(StructureSeqDataset(pairs[int(len(pairs) * train_ratio):]),
+                                  batch_size=batch_no, shuffle=False)
+        return train_dataset, test_dataset
 
     def get_self_embedding(self):
         res, labels, predicted_labels, pdb_ids = self.get_embedding([self.train_set, self.test_set], self.model)
         return res, pdb_ids, labels, predicted_labels
+
+
+class StructureSeqDataset(data.Dataset):
+    """Face Landmarks dataset."""
+
+    def __init__(self, pairs: ty.List[ty.Tuple[np.ndarray, utils.SeqData]]):
+        self.pairs: ty.List[ty.Tuple[np.ndarray, utils.SeqData]] = pairs
+
+    def __len__(self):
+        return len(self.pairs)
+
+    def __getitem__(self, idx):
+        return self.pairs[idx]
 
 
 def train_sequence_to_structure_model(train_dataset,
@@ -326,30 +328,36 @@ def train_sequence_to_structure_model(train_dataset,
 
     from geometricus_deep_learning.geometric_models import Simple1DCNN
     model = Simple1DCNN(input_length, output_length).cuda()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = torch.nn.L1Loss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+    criterion = torch.nn.MSELoss()
 
     def train():
         model.train()
         for str_embedding, data in train_dataset:  # Iterate in batches over the training dataset.
             str_embedding: torch.Tensor
-            str_embedding.cuda()
-            data = data.cuda()
-            out = model(data.x)  # Perform a single forward pass.
+            data: torch.Tensor
+            str_embedding = str_embedding.cuda()
+            data = data.reshape(data.shape[0], 1, -1).cuda()
+            out = model(data)  # Perform a single forward pass.
             loss = criterion(out, str_embedding)  # Compute the loss.
             loss.backward()  # Derive gradients.
             optimizer.step()  # Update parameters based on gradients.
-            optimizer.zero_grad()  # Clear gradients.
+            optimizer.zero_grad()
+        print(loss) # Clear gradients.
 
     def test(loader):
         model.eval()
         error = 0
+        total = 0
         for str_embedding, data in loader:  # Iterate in batches over the training/test dataset.
-            data = data.cuda()
-            out = model(data.x)
-            pred = out.argmax(dim=1)  # Use the class with highest probability.
-            error += (torch.abs(pred - str_embedding)).sum()  # Check against ground-truth labels.
-        return error / len(loader.dataset)  # Derive ratio of correct predictions.
+            # str_embedding = str_embedding.cuda()
+            data = data.reshape(data.shape[0], 1, -1).cuda()
+            out = model(data)
+            str_embedding = str_embedding.reshape(out.shape).cuda()
+            error += (torch.abs(out - str_embedding)).sum().cpu().detach().numpy() / data.shape[0]
+            # error +=  / data.shape[0])  # Check against ground-truth labels.
+            total += 1
+        return error / total  # Derive ratio of correct predictions.
 
     train_acc = test(train_dataset)
     test_acc = test(test_dataset)
