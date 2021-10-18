@@ -1,25 +1,13 @@
-from cortex_DIM.nn_modules.mi_networks import MIFCNet, MI1x1ConvNet
-from evaluate_embedding import evaluate_embedding
 from gin import Encoder
 from losses import local_global_loss_
 from model import FF, PriorDiscriminator
-from torch import optim
-from torch.autograd import Variable
-from torch_geometric.data import DataLoader
-from torch_geometric.datasets import TUDataset
-import json
-import json
-import numpy as np
-import os.path as osp
-import sys
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class InfoGraph(nn.Module):
     def __init__(self, hidden_dim, num_gc_layers, dataset_num_features, alpha=0.5, beta=1., gamma=.1,
-                 prior=0.):  # TODO: fix prior
+                 prior=False):  # TODO: fix prior
         super(InfoGraph, self).__init__()
 
         self.alpha = alpha
@@ -107,13 +95,10 @@ def train(dataloader, dataset_num_features, hidden_dim, num_gc_layers=3,
         if epoch % log_interval == 0:
             model.eval()
             emb, y, ids = model.encoder.get_embeddings(dataloader)
-            res = evaluate_embedding(emb, y)
 
         model.eval()
         emb, y, ids = model.encoder.get_embeddings(dataloader)
         return model, emb, y, ids
-
-
 
 
 if __name__ == '__main__':

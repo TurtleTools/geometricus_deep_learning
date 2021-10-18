@@ -9,6 +9,7 @@ from geometricus_deep_learning import dataset_utils, utils
 from pathlib import Path
 import pickle
 from torch.utils import data
+from main import InfoGraph
 from main import train as train_model
 
 
@@ -27,7 +28,7 @@ class EmbedderMeta:  # TODO: save original test and train embeddings somewhere
 class GeometricusGraphEmbedder:
     ids: ty.Union[ty.List[str], None]
     model_meta: ty.Union[EmbedderMeta, None] = None
-    model: ty.Union[GCN, None] = None
+    model: ty.Union[InfoGraph, None] = None
     pdb_target_folder: ty.Union[str, None] = None
     pdb_training_folder: ty.Union[str, None] = None
     id_to_classname: ty.Union[ty.Dict[str, int]] = None
