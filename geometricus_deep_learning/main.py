@@ -58,7 +58,7 @@ class InfoGraph(nn.Module):
         else:
             PRIOR = 0
 
-        return local_global_loss + PRIOR
+        return local_global_loss + PRIOR, M
 
 
 def train(dataloader, dataset_num_features, hidden_dim, num_gc_layers=3,
@@ -86,7 +86,7 @@ def train(dataloader, dataset_num_features, hidden_dim, num_gc_layers=3,
         for data in dataloader:
             data = data.to(device)
             optimizer.zero_grad()
-            loss = model(data.x, data.edge_index, data.batch, data.num_graphs)
+            loss, out = model(data.x, data.edge_index, data.batch, data.num_graphs)
             loss_all += loss.item() * data.num_graphs
             loss.backward()
             optimizer.step()
