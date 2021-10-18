@@ -14,8 +14,6 @@ import prody as pd
 from umap import UMAP
 
 
-
-
 @dataclass
 class SeqData:
     seq: str

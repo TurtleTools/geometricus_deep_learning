@@ -2,7 +2,7 @@
 
 """
 
-from cortex_DIM.nn_modules.encoder import ResnetEncoder, FoldedResnetEncoder
+from geometricus_deep_learning.cortex_DIM.nn_modules.encoder import ResnetEncoder, FoldedResnetEncoder
 
 
 _resnet19_32x32 = dict(

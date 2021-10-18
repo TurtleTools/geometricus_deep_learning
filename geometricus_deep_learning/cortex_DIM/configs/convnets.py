@@ -5,7 +5,7 @@ fc_args are in format (dim_h, batch_norm, dropout, nonlinearity)
 
 '''
 
-from cortex_DIM.nn_modules.encoder import ConvnetEncoder, FoldedConvnetEncoder
+from geometricus_deep_learning.cortex_DIM.nn_modules.encoder import ConvnetEncoder, FoldedConvnetEncoder
 
 
 # Basic DCGAN-like encoders

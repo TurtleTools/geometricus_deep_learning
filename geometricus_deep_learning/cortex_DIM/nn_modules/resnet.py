@@ -5,8 +5,8 @@
 import torch
 import torch.nn as nn
 
-from cortex_DIM.nn_modules.convnet import Convnet
-from cortex_DIM.nn_modules.misc import Fold, Unfold, View
+from geometricus_deep_learning.cortex_DIM.nn_modules.convnet import Convnet
+from geometricus_deep_learning.cortex_DIM.nn_modules.misc import Fold, Unfold, View
 
 
 _nonlin_idx = 6

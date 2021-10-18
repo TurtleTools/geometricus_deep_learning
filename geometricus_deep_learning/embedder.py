@@ -9,8 +9,8 @@ from geometricus_deep_learning import dataset_utils, utils
 from pathlib import Path
 import pickle
 from torch.utils import data
-from main import InfoGraph
-from main import train as train_model
+from geometricus_deep_learning.main import InfoGraph
+from geometricus_deep_learning.main import train as train_model
 
 
 @dataclass

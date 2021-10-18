@@ -7,7 +7,7 @@ import torch.nn as nn
 
 #from cortex.built_ins.networks.utils import get_nonlinearity
 
-from cortex_DIM.nn_modules.misc import Fold, Unfold, View
+from geometricus_deep_learning.cortex_DIM.nn_modules.misc import Fold, Unfold, View
 
 
 def infer_conv_size(w, k, s, p):

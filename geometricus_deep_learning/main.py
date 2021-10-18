@@ -1,6 +1,6 @@
-from gin import Encoder
-from losses import local_global_loss_
-from model import FF, PriorDiscriminator
+from geometricus_deep_learning.gin import Encoder
+from geometricus_deep_learning.losses import local_global_loss_
+from geometricus_deep_learning.model import FF, PriorDiscriminator
 import torch
 import torch.nn as nn
 

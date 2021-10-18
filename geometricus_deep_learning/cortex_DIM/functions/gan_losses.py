@@ -7,7 +7,7 @@ import math
 import torch
 import torch.nn.functional as F
 
-from cortex_DIM.functions.misc import log_sum_exp
+from geometricus_deep_learning.cortex_DIM.functions.misc import log_sum_exp
 
 
 def raise_measure_error(measure):

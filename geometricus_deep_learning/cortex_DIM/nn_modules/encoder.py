@@ -4,8 +4,8 @@
 
 import torch
 
-from cortex_DIM.nn_modules.convnet import Convnet, FoldedConvnet
-from cortex_DIM.nn_modules.resnet import ResNet, FoldedResNet
+from geometricus_deep_learning.cortex_DIM.nn_modules.convnet import Convnet, FoldedConvnet
+from geometricus_deep_learning.cortex_DIM.nn_modules.resnet import ResNet, FoldedResNet
 
 
 def create_encoder(Module):

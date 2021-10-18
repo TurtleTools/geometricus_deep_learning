@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from cortex_DIM.nn_modules.misc import Permute
+from geometricus_deep_learning.cortex_DIM.nn_modules.misc import Permute
 
 
 class MIFCNet(nn.Module):

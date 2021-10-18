@@ -7,7 +7,7 @@ import math
 import torch
 import torch.nn.functional as F
 
-from cortex_DIM.functions.gan_losses import get_positive_expectation, get_negative_expectation
+from geometricus_deep_learning.cortex_DIM.functions.gan_losses import get_positive_expectation, get_negative_expectation
 
 
 def fenchel_dual_loss(l, g, measure=None):

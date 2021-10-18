@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from cortex_DIM.functions.gan_losses import get_positive_expectation, get_negative_expectation
+from geometricus_deep_learning.cortex_DIM.functions.gan_losses import get_positive_expectation, get_negative_expectation
 
 def local_global_loss_(l_enc, g_enc, edge_index, batch, measure):
     '''
