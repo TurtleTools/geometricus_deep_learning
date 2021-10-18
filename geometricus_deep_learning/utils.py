@@ -133,16 +133,11 @@ def invariant_to_graph(invariant: ty.Union[MomentInvariants, MomentInvariantsSav
     return graph
 
 
-
-
-
 def transform_geometricus_dataset_for_training(filename_to_classname: ty.Dict[str, str],
                                                invariants: ty.Dict[
                                                    str, ty.Union[MomentInvariants, MomentInvariantsSavable]],
-                                               train_ratio: float = 0.8,
                                                graph_distance_threshold: float = 6.,
-                                               batch_no: int = 1028) -> ty.Tuple[DataLoader, DataLoader, dict]:
-    train_ratio = train_ratio if train_ratio <= 1 else 1.
+                                               batch_no: int = 1028) -> ty.Tuple[DataLoader, dict]:
     filename_to_classname = {k: v for k, v in filename_to_classname.items() if k in invariants}
     all_keys = list(filename_to_classname.keys())
     shuffle(all_keys)
@@ -163,8 +158,5 @@ def transform_geometricus_dataset_for_training(filename_to_classname: ty.Dict[st
             torch.LongTensor)
         data.x = data.x.type(torch.float32)
         data.pdb_id = all_keys[i]
-    train_dataset = xs[:int(len(xs) * train_ratio)]
-    test_dataset = xs[int(len(xs) * train_ratio):]
-
-    return (DataLoader(train_dataset, batch_size=batch_no, shuffle=True),
-            DataLoader(test_dataset, batch_size=batch_no, shuffle=False), id_to_classname)
+    train_dataset = xs
+    return DataLoader(train_dataset, batch_size=batch_no, shuffle=True), id_to_classname

@@ -5,93 +5,11 @@ from geometricus import MomentType, MomentInvariants, SplitType
 from torch_geometric.data import DataLoader
 from glob import glob
 import torch
-from geometricus_deep_learning.geometric_models import GCN
 from geometricus_deep_learning import dataset_utils, utils
 from pathlib import Path
 import pickle
 from torch.utils import data
-
-
-def train_model(train_dataset,
-                test_dataset,
-                number_of_node_features,
-                hidden_channels,
-                number_of_classes,
-                aggregator="mean",
-                epochs: int = 5_000,
-                lr=0.0005):
-    model = GCN(number_of_node_features, hidden_channels, number_of_classes, aggregator=aggregator).cuda()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = torch.nn.CrossEntropyLoss()
-
-    def train():
-        model.train()
-        for data in train_dataset:  # Iterate in batches over the training dataset.
-            data = data.cuda()
-            out = model(data.x, data.edge_index, data.batch)  # Perform a single forward pass.
-            loss = criterion(out, data.y)  # Compute the loss.
-            loss.backward()  # Derive gradients.
-            optimizer.step()  # Update parameters based on gradients.
-            optimizer.zero_grad()  # Clear gradients.
-
-    def test(loader):
-        model.eval()
-        correct = 0
-        for data in loader:  # Iterate in batches over the training/test dataset.
-            data = data.cuda()
-            out = model(data.x, data.edge_index, data.batch)
-            pred = out.argmax(dim=1)  # Use the class with highest probability.
-            correct += int((pred == data.y).sum())  # Check against ground-truth labels.
-        return correct / len(loader.dataset)  # Derive ratio of correct predictions.
-
-    train_acc = test(train_dataset)
-    test_acc = test(test_dataset)
-    print(f'Initial: Train Acc: {train_acc:.4f}, Test Acc: {test_acc:.4f}')
-
-    tests = list()
-    trains = list()
-    epoch = 0
-    for epoch in range(1, epochs):
-        train()
-        train_acc = test(train_dataset)
-        test_acc = test(test_dataset)
-        trains.append(train_acc)
-        tests.append(test_acc)
-        if (epoch % 10) == 0:
-            print(f'Epoch: {epoch:03d}, Train Acc: {np.mean(trains):.4f}, Test Acc: {np.mean(tests):.4f}')
-            trains = list()
-            tests = list()
-    print(f'Epoch: {epoch:03d}, Train Acc: {train_acc:.4f}, Test Acc: {test_acc:.4f}')
-    return model, (train_acc, test_acc)
-
-
-def test():
-    pdb_folder = "../data/cath/"
-    invariants = GeometricusGraphEmbedder.get_multi_invariants(pdb_folder, [
-        utils.InvariantType(SplitType.KMER, 30),
-        utils.InvariantType(SplitType.RADIUS, 10),
-    ])
-    single_invariant = invariants[list(invariants.keys())[0]]
-    print("invariants extracted")
-    domain_info = dataset_utils.DomainInfo.from_domainlist_file("../data/cath-domain-list-S100.txt").domains
-    cath_mapping = {k: f"{v.c_class}-{v.architecture}-{v.topology}" for k, v in domain_info.items() if k in invariants}
-
-    keys, counts = np.unique(list(cath_mapping.values()), return_counts=True)
-    least_allowed_class_count = 400
-    keys_to_use = {x for x in keys[np.where(counts >= least_allowed_class_count)[0]]}
-    cath_mapping = {k: v for k, v in cath_mapping.items() if v in keys_to_use}
-    print("cath info linked to files")
-
-    train_data, test_data, class_map = utils.transform_geometricus_dataset_for_training(cath_mapping,
-                                                                                        invariants)
-    train_model(
-        train_data,
-        test_data,
-        number_of_node_features=single_invariant.moments.shape[1],
-        hidden_channels=256,
-        number_of_classes=len(keys_to_use),
-        lr=0.0001
-    )
+from main import train as train_model
 
 
 @dataclass
@@ -101,11 +19,8 @@ class EmbedderMeta:  # TODO: save original test and train embeddings somewhere
     self_path: str
     id_to_classname_path: str
     invariant_types: ty.List[utils.InvariantType]
-    train_acc: float
-    test_acc: float
     original_invariants_file: str
-    test_dataset_path: str
-    train_dataset_path: str
+    dataset_path: str
 
 
 @dataclass
@@ -117,7 +32,6 @@ class GeometricusGraphEmbedder:
     pdb_training_folder: ty.Union[str, None] = None
     id_to_classname: ty.Union[ty.Dict[str, int]] = None
     train_set: ty.Union[DataLoader, None] = None
-    test_set: ty.Union[DataLoader, None] = None
 
     @staticmethod
     def get_multi_invariants(pdb_file_path: str,
@@ -167,7 +81,6 @@ class GeometricusGraphEmbedder:
             file_output_path: str = "./data/models/",
             epochs: int = 1_000,
             number_of_batches: int = 512,
-            train_ratio: float = 0.8,
             graph_distance_threshold: float = 6.) -> "GeometricusGraphEmbedder":
 
         # 1. create invariants according to given invariant types
@@ -179,27 +92,20 @@ class GeometricusGraphEmbedder:
         pdb_file_to_class_mapping = {k: v for k, v in pdb_file_to_class_mapping.items() if k in invariant_all}
 
         # 4. Split into train and test sets
-        train_data, test_data, class_map = utils.transform_geometricus_dataset_for_training(
+        train_data, class_map = utils.transform_geometricus_dataset_for_training(
             pdb_file_to_class_mapping,
             invariant_all,
             batch_no=number_of_batches,
-            graph_distance_threshold=graph_distance_threshold,
-            train_ratio=train_ratio)
+            graph_distance_threshold=graph_distance_threshold)
 
         # 5. train model and store relevant metadata
-        model, (train_acc, test_acc) = train_model(train_data, test_data,
-                                                   number_of_node_features=single_invariant.moments.shape[1],
-                                                   hidden_channels=hidden_channels,
-                                                   number_of_classes=len(
-                                                       {x for x in pdb_file_to_class_mapping.values()}
-                                                   ),
-                                                   lr=learning_rate,
-                                                   epochs=epochs)
+        model, pytorch_embedding, labels, pdb_ids = train_model(train_data,
+                                                         dataset_num_features=single_invariant.moments.shape[1],
+                                                         hidden_dim=hidden_channels,
+                                                         lr=learning_rate,
+                                                         epochs=epochs)
 
-        # 6. get embedding
-        pytorch_embedding, _, _, pdb_ids = cls.get_embedding([train_data, test_data], model)
-
-        # 7. store metadata
+        # 6. store metadata
 
         full_output_path = Path(file_output_path)
         torch.save(model, full_output_path / "model.pth")
@@ -209,24 +115,19 @@ class GeometricusGraphEmbedder:
             self_path=str(full_output_path / "meta.pkl"),
             id_to_classname_path=str(full_output_path / "class_map.pkl"),
             invariant_types=invariant_types,
-            train_acc=train_acc,
-            test_acc=test_acc,
             original_invariants_file=str(full_output_path / "invariants.pkl"),
-            train_dataset_path=str(full_output_path / "train_set.pkl"),
-            test_dataset_path=str(full_output_path / "test_set.pkl"),
+            dataset_path=str(full_output_path / "train_set.pkl")
         )
         pickle.dump(class_map, open(str(full_output_path / "class_map.pkl"), "wb"))
         pickle.dump(meta, open(str(full_output_path / "meta.pkl"), "wb"))
         pickle.dump(invariant_all, open(str(full_output_path / "invariants.pkl"), "wb"))
         pickle.dump(train_data, open(str(full_output_path / "train_set.pkl"), "wb"))
-        pickle.dump(test_data, open(str(full_output_path / "test_set.pkl"), "wb"))
 
         return cls(list(pdb_ids),
                    meta, model, pdb_target_folder=None,
                    pdb_training_folder=pdb_file_path,
                    id_to_classname=class_map,
-                   train_set=train_data,
-                   test_set=test_data)
+                   train_set=train_data)
 
     @classmethod
     def from_model_meta_file(cls, filename: str) -> "GeometricusGraphEmbedder":
@@ -243,26 +144,24 @@ class GeometricusGraphEmbedder:
 
         # 4. Load original train/test datasets
 
-        train_data = pickle.load(open(meta.train_dataset_path, "rb"))
-        test_data = pickle.load(open(meta.test_dataset_path, "rb"))
+        train_data = pickle.load(open(meta.dataset_path, "rb"))
 
         return cls(ids=ids, model_meta=meta, model=model,
                    pdb_training_folder=meta.pdb_folder,
-                   id_to_classname=class_map, train_set=train_data, test_set=test_data)
+                   id_to_classname=class_map, train_set=train_data)
 
     def transform(self, pdb_folder: str,
                   mappings: ty.Union[ty.Dict[str, str], None] = None) -> ty.Tuple[
-        np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        np.ndarray, np.ndarray, np.ndarray]:
         invariants = self.get_multi_invariants(pdb_folder, self.model_meta.invariant_types)
         if mappings is None:
-            data_part1, data_part2, _ = utils.transform_geometricus_dataset_for_training(
+            dataloader, _ = utils.transform_geometricus_dataset_for_training(
                 {x: x for x in invariants},
                 invariants)
         else:
-            data_part1, data_part2, _ = utils.transform_geometricus_dataset_for_training(mappings,
-                                                                                         invariants)
-        res, labels, predicted_labels, pdb_ids = self.get_embedding([data_part1, data_part2], self.model)
-        return res, pdb_ids, labels, predicted_labels
+            dataloader, _ = utils.transform_geometricus_dataset_for_training(mappings, invariants)
+        res, labels, pdb_ids = self.model.encoder.get_embeddings(dataloader)
+        return res, pdb_ids, labels
 
     @property
     def get_original_moment_invariants(self):
@@ -274,110 +173,8 @@ class GeometricusGraphEmbedder:
     def continue_training(self):
         pass
 
-    def train_sequence_to_structure_from_original_invariants(self, pdb_folder: str, train_ratio: float = 0.8,
-                                                             batch_no: int = 512):
-        # 1. Get data loaders
-        train_loader, test_loader = self.get_structure_to_sequence_loaders(pdb_folder, train_ratio=train_ratio,
-                                                                           batch_no=batch_no)
-        return train_sequence_to_structure_model(train_loader, test_loader,
-                                                 input_length=150,
-                                                 output_length=20)
-
-    def get_structure_to_sequence_loaders(self, pdb_folder: str, train_ratio: float = 0.8,
-                                          batch_no: int = 1028):
-        from umap import UMAP
-        structure_embedding, pdb_ids, _, _ = self.get_self_embedding()
-        structure_embedding = UMAP(n_components=20).fit_transform(structure_embedding)
-        structure_embedding = {pdb_ids[i]: torch.from_numpy(structure_embedding[i]) for i in range(len(pdb_ids))}
-        sequence_transforms: ty.Dict[str, utils.SeqData] = utils.transform_pdbseqs(pdb_folder,
-                                                                                   selection=set(list(structure_embedding.keys())))
-        pairs = [
-            (structure_embedding[k], torch.from_numpy(sequence_transforms[k].x))
-            for k in structure_embedding
-        ]
-        train_dataset = DataLoader(StructureSeqDataset(pairs[:int(len(pairs) * train_ratio)]),
-                                   batch_size=batch_no, shuffle=True)
-        test_dataset = DataLoader(StructureSeqDataset(pairs[int(len(pairs) * train_ratio):]),
-                                  batch_size=batch_no, shuffle=False)
-        return train_dataset, test_dataset
-
     def get_self_embedding(self):
-        res, labels, predicted_labels, pdb_ids = self.get_embedding([self.train_set, self.test_set], self.model)
-        return res, pdb_ids, labels, predicted_labels
-
-
-class StructureSeqDataset(data.Dataset):
-    """Face Landmarks dataset."""
-
-    def __init__(self, pairs: ty.List[ty.Tuple[np.ndarray, utils.SeqData]]):
-        self.pairs: ty.List[ty.Tuple[np.ndarray, utils.SeqData]] = pairs
-
-    def __len__(self):
-        return len(self.pairs)
-
-    def __getitem__(self, idx):
-        return self.pairs[idx]
-
-
-def train_sequence_to_structure_model(train_dataset,
-                                      test_dataset,
-                                      input_length,
-                                      output_length,
-                                      epochs: int = 5_000,
-                                      lr=0.0005):
-
-    from geometricus_deep_learning.geometric_models import Simple1DCNN
-    model = Simple1DCNN(input_length, output_length).cuda()
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr)
-    criterion = torch.nn.MSELoss()
-
-    def train():
-        model.train()
-        for str_embedding, data in train_dataset:  # Iterate in batches over the training dataset.
-            str_embedding: torch.Tensor
-            data: torch.Tensor
-            str_embedding = str_embedding.cuda()
-            data = data.reshape(data.shape[0], 1, -1).cuda()
-            out = model(data)  # Perform a single forward pass.
-            loss = criterion(out, str_embedding)  # Compute the loss.
-            loss.backward()  # Derive gradients.
-            optimizer.step()  # Update parameters based on gradients.
-            optimizer.zero_grad()
-        print(loss) # Clear gradients.
-
-    def test(loader):
-        model.eval()
-        error = 0
-        total = 0
-        for str_embedding, data in loader:  # Iterate in batches over the training/test dataset.
-            # str_embedding = str_embedding.cuda()
-            data = data.reshape(data.shape[0], 1, -1).cuda()
-            out = model(data)
-            str_embedding = str_embedding.reshape(out.shape).cuda()
-            error += (torch.abs(out - str_embedding)).sum().cpu().detach().numpy() / data.shape[0]
-            # error +=  / data.shape[0])  # Check against ground-truth labels.
-            total += 1
-        return error / total  # Derive ratio of correct predictions.
-
-    train_acc = test(train_dataset)
-    test_acc = test(test_dataset)
-    print(f'Initial: Train Acc: {train_acc:.4f}, Test Acc: {test_acc:.4f}')
-
-    tests = list()
-    trains = list()
-    epoch = 0
-    for epoch in range(1, epochs):
-        train()
-        train_acc = test(train_dataset)
-        test_acc = test(test_dataset)
-        trains.append(train_acc)
-        tests.append(test_acc)
-        if (epoch % 10) == 0:
-            print(f'Epoch: {epoch:03d}, Train Acc: {np.mean(trains):.4f}, Test Acc: {np.mean(tests):.4f}')
-            trains = list()
-            tests = list()
-    print(f'Epoch: {epoch:03d}, Train Acc: {train_acc:.4f}, Test Acc: {test_acc:.4f}')
-    return model, (train_acc, test_acc)
+        return self.model.encoder.get_embeddings(self.train_set)
 
 
 if __name__ == "__main__":
