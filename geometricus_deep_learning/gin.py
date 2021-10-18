@@ -74,11 +74,12 @@ class Encoder(torch.nn.Module):
                 x, _ = self.forward(x, edge_index, batch)
                 ret.append(x.cpu().numpy())
                 y.append(data.y.cpu().numpy())
-                ids.append(pdb_id.cpu().numpy())
+                ids.append(pdb_id)
         ret = np.concatenate(ret, 0)
         y = np.concatenate(y, 0)
         ids = np.concatenate(ids, 0)
         return ret, y, ids
+
 
 class Net(torch.nn.Module):
     def __init__(self):

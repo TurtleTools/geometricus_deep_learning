@@ -96,9 +96,9 @@ def train(dataloader, dataset_num_features, hidden_dim, num_gc_layers=3,
             model.eval()
             emb, y, ids = model.encoder.get_embeddings(dataloader)
 
-        model.eval()
-        emb, y, ids = model.encoder.get_embeddings(dataloader)
-        return model, emb, y, ids
+    model.eval()
+    emb, y, ids = model.encoder.get_embeddings(dataloader)
+    return model, emb, y, ids
 
 
 if __name__ == '__main__':
