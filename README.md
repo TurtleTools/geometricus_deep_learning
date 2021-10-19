@@ -1,7 +1,7 @@
 # Exploring geometric deep learning algorithms with rotation invariant moments for protein structures
 
 ### Done:
-* Formed graph representations of proteins with 16 3D-rotation invariant moment descriptors per residue, using Geometricus tool [1]
+* Graph representations of proteins with 16 3D-rotation invariant moment descriptors per residue, using Geometricus tool [1]
 * Unsupervised graph embeddings using InfoGraph [2] - a contrastive method for graph level representation learning
 
 ### To be done:
