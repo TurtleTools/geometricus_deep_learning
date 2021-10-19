@@ -36,7 +36,7 @@ class InfoGraph(nn.Module):
                 if m.bias is not None:
                     m.bias.data.fill_(0.0)
 
-    def forward(self, x, edge_index, batch, num_graphs):
+    def forward(self, x, edge_index, batch, num_graphs): # TODO: remove num_graphs
         # batch_size = data.num_graphs
         if x is None:
             x = torch.ones(batch.shape[0]).to("cuda")
